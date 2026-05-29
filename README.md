@@ -11,8 +11,9 @@
 
 ## 使用方式
 
-- 上传 JSON 文件，或输入服务器端文件路径（示例：`/tmp/workspace/suibianll/DAG-visualize/sample_data.json`）。
-- 点击 **加载示例** 可直接加载仓库内的 `sample_data.json`。
+- 应用启动后默认加载仓库内的 `sample_data.json`。
+- 上传 JSON 文件可直接替换当前视图数据。
+- 点击 **加载示例** 可重新加载 `sample_data.json`。
 - 初始只显示宏观 DAG；点击节点后展开三栏视图（宏观/微观/详情）。
 - 点击 **返回总体视图** 可折叠回单一宏观视图。
 

@@ -138,6 +138,14 @@ def parse_upload(contents):
     return json.loads(decoded.decode("utf-8"))
 
 
+try:
+    DEFAULT_DATA = read_json(SAMPLE_PATH)
+    DEFAULT_ERROR = ""
+except Exception as exc:
+    DEFAULT_DATA = None
+    DEFAULT_ERROR = f"默认样例加载失败：{exc}"
+
+
 def build_edges_from_dependencies(nodes):
     edges = []
     for node in nodes:
@@ -335,24 +343,18 @@ app.layout = html.Div(
                             children=html.Button("上传 JSON 文件"),
                             multiple=False,
                         ),
-                        dcc.Input(
-                            id="file-path-input",
-                            className="path-input",
-                            placeholder="输入服务器端文件路径，例如 /tmp/workspace/suibianll/DAG-visualize/sample_data.json",
-                        ),
-                        html.Button("读取路径", id="load-path-btn"),
                         html.Button("加载示例", id="load-sample-btn", className="primary"),
                         html.Button("返回总体视图", id="reset-selection-btn"),
                     ],
                 ),
-                html.Div(id="error-box", className="error"),
+                html.Div(id="error-box", className="error", children=DEFAULT_ERROR),
                 html.Div(
-                    "初始只展示宏观视图，点击节点后显示细粒度推理链和任务详情。",
+                    "默认加载示例数据；上传 JSON 后可替换视图内容。",
                     className="hint",
                 ),
             ],
         ),
-        dcc.Store(id="data-store"),
+        dcc.Store(id="data-store", data=DEFAULT_DATA),
         dcc.Store(id="selection-store"),
         html.Div(
             id="columns",
@@ -423,12 +425,9 @@ app.layout = html.Div(
     Output("error-box", "children"),
     Input("upload-data", "contents"),
     Input("load-sample-btn", "n_clicks"),
-    Input("load-path-btn", "n_clicks"),
-    State("upload-data", "filename"),
-    State("file-path-input", "value"),
     prevent_initial_call=True,
 )
-def load_data(upload_contents, sample_clicks, path_clicks, filename, file_path):
+def load_data(upload_contents, sample_clicks):
     trigger = ctx.triggered_id
     try:
         if trigger == "upload-data" and upload_contents:
@@ -436,11 +435,6 @@ def load_data(upload_contents, sample_clicks, path_clicks, filename, file_path):
             return data, None, ""
         if trigger == "load-sample-btn":
             data = read_json(SAMPLE_PATH)
-            return data, None, ""
-        if trigger == "load-path-btn":
-            if not file_path:
-                return no_update, no_update, "请输入文件路径。"
-            data = read_json(file_path)
             return data, None, ""
     except Exception as exc:
         return no_update, no_update, f"加载失败：{exc}"

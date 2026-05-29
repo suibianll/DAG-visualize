@@ -7,50 +7,57 @@
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; background: #f5f6f8; color: #111827; }
-    .layout { display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
-    .panel { padding: 16px; background: #fff; border-right: 1px solid #e5e7eb; }
-    .panel h2 { margin: 0 0 8px; font-size: 18px; }
-    textarea { width: 100%; min-height: 420px; resize: vertical; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .row { display: flex; gap: 8px; margin-top: 10px; }
+    .layout { min-height: 100vh; padding: 12px; display: grid; gap: 12px; grid-template-rows: auto 1fr; }
+    .toolbar { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    .toolbar h2 { margin: 0 0 8px; font-size: 16px; }
+    textarea { width: 100%; min-height: 150px; resize: vertical; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row { display: flex; gap: 8px; margin-top: 8px; }
     button, select { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; background: #fff; cursor: pointer; }
     button.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
-    .hint { margin-top: 10px; color: #4b5563; font-size: 12px; line-height: 1.5; }
-    .canvas { padding: 16px; overflow: auto; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .hint { margin-top: 8px; color: #4b5563; font-size: 12px; line-height: 1.5; }
+    .columns { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr; gap: 12px; min-height: 0; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; min-height: 0; display: flex; flex-direction: column; }
     .title { margin: 0 0 8px; font-size: 16px; }
-    svg { width: 100%; min-height: 280px; border: 1px dashed #d1d5db; border-radius: 8px; background: #fcfcfd; }
+    svg { width: 100%; min-height: 320px; border: 1px dashed #d1d5db; border-radius: 8px; background: #fcfcfd; flex: 1; }
     .error { margin-top: 8px; color: #dc2626; font-size: 13px; white-space: pre-wrap; }
+    .task-detail { overflow: auto; border: 1px dashed #d1d5db; border-radius: 8px; padding: 10px; background: #fcfcfd; flex: 1; }
+    .kv { margin-bottom: 8px; }
+    .k { color: #6b7280; font-size: 12px; margin-bottom: 2px; }
+    .v { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+    .block { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; background: #fff; margin-bottom: 8px; }
+    .block h4 { margin: 0 0 6px; font-size: 13px; }
+    @media (max-width: 1200px) { .columns { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <div class="layout">
-    <aside class="panel">
+    <section class="toolbar">
       <h2>DAG JSON 输入</h2>
       <textarea id="jsonInput"></textarea>
       <div class="row">
         <button id="loadSampleBtn">加载示例</button>
         <button class="primary" id="renderBtn">渲染</button>
-      </div>
-      <div class="row">
-        <select id="taskSelect" style="width: 100%">
-          <option value="">请选择任务查看 micro 图</option>
+        <select id="taskSelect" style="min-width: 260px">
+          <option value="">请选择任务查看详情</option>
         </select>
       </div>
       <div id="errorBox" class="error"></div>
       <div class="hint">
-        支持结构：<br />
-        <code>dag_visualization.json.graph.macro</code> / <code>micro</code><br />
-        点击 macro 节点可直接切换 micro 视图。
+        三栏模式：左侧宏观概览，中间细粒度推理链，右侧任务完整信息。点击左侧任务节点可联动中/右两栏。
       </div>
-    </aside>
-    <main class="canvas">
+    </section>
+    <main class="columns">
       <section class="card">
-        <h3 class="title">Macro DAG（任务依赖）</h3>
+        <h3 class="title">总体视图（任务目标 + 结论概览）</h3>
         <svg id="macroSvg"></svg>
       </section>
       <section class="card">
-        <h3 class="title">Micro DAG（任务内推理）</h3>
+        <h3 class="title">细粒度推理链（当前任务）</h3>
         <svg id="microSvg"></svg>
+      </section>
+      <section class="card">
+        <h3 class="title">任务完整信息</h3>
+        <div id="taskDetail" class="task-detail"></div>
       </section>
     </main>
   </div>
@@ -64,8 +71,10 @@
     const errorBox = $("errorBox");
     const macroSvg = $("macroSvg");
     const microSvg = $("microSvg");
+    const taskDetail = $("taskDetail");
 
     let currentData = null;
+    let selectedTaskId = "";
 
     const sampleData = {
       dag_visualization: {
@@ -73,9 +82,72 @@
           graph: {
             macro: {
               nodes: [
-                { id: "medical__task_N_1001", task_type: "knowledge_extract", status: "done", goal: "提取指南要点", conclusion: "已提取", color: "#8B5CF6", label: "知识检索", evidence_count: 2, dependencies: [] },
-                { id: "medical__task_N_1002", task_type: "compliance_check", status: "pending", goal: "检查合规性", conclusion: "", color: "#10B981", label: "合规检查", evidence_count: 1, dependencies: ["medical__task_N_1001"] },
-                { id: "medical__task_N_1003", task_type: "treatment_plan_gen", status: "failed", goal: "生成治疗方案", conclusion: "证据不足", color: "#F59E0B", label: "治疗计划", evidence_count: 0, dependencies: ["medical__task_N_1002"] }
+                {
+                  id: "medical__task_N_1001",
+                  task_type: "knowledge_extract",
+                  status: "done",
+                  goal: "提取最新指南关于高血压一线用药与禁忌证要点",
+                  conclusion: "已完成核心证据抽取，形成结构化结论。",
+                  color: "#EDE9FE",
+                  label: "知识检索",
+                  evidence_count: 2,
+                  dependencies: [],
+                  evidence_list: [
+                    { source_id: "doc_guideline_a", source_type: "vector", title: "高血压指南A", snippet: "ACEI/ARB 为推荐方案", relevance_score: 0.92, trust_score: 0.86 },
+                    { source_id: "doc_guideline_b", source_type: "bm25", title: "高血压指南B", snippet: "肾功能受损时需调整", relevance_score: 0.88, trust_score: 0.83 }
+                  ],
+                  sub_conclusions: [
+                    {
+                      id: "c1",
+                      title: "一线药物推荐",
+                      content: "ACEI/ARB 在多数患者中优先。",
+                      supported_by_evidence: ["doc_guideline_a"],
+                      cross_refs: [],
+                      reasoning_chain: [
+                        {
+                          evidence_refs: [{ ref: "doc_guideline_a", excerpt: "指南A：ACEI/ARB 推荐等级高" }],
+                          reasoning: "高质量证据且一致性高",
+                          claim: "可作为初始治疗方案"
+                        }
+                      ]
+                    }
+                  ],
+                  conclusion_chain: [
+                    {
+                      evidence_refs: [{ ref: "doc_guideline_b", excerpt: "指南B：肾功能下降需个体化调整" }],
+                      reasoning: "需结合肾功能评估",
+                      claim: "可进入合规检查环节"
+                    }
+                  ]
+                },
+                {
+                  id: "medical__task_N_1002",
+                  task_type: "compliance_check",
+                  status: "pending",
+                  goal: "检查推荐方案与患者基础疾病及药物禁忌是否冲突",
+                  conclusion: "待执行",
+                  color: "#DCFCE7",
+                  label: "合规检查",
+                  evidence_count: 1,
+                  dependencies: ["medical__task_N_1001"],
+                  evidence_list: [{ source_id: "patient_profile", source_type: "dependency", title: "患者档案", snippet: "慢性肾病3期", relevance_score: 0.95, trust_score: 0.9 }],
+                  sub_conclusions: [],
+                  conclusion_chain: []
+                },
+                {
+                  id: "medical__task_N_1003",
+                  task_type: "treatment_plan_gen",
+                  status: "failed",
+                  goal: "生成最终治疗建议并输出风险提示",
+                  conclusion: "证据不足，需补充肾功能复检数据",
+                  color: "#FEF3C7",
+                  label: "治疗计划",
+                  evidence_count: 0,
+                  dependencies: ["medical__task_N_1002"],
+                  evidence_list: [],
+                  sub_conclusions: [],
+                  conclusion_chain: []
+                }
               ],
               edges: [
                 { source: "medical__task_N_1001", target: "medical__task_N_1002" },
@@ -112,6 +184,11 @@
 
     function escapeText(text) {
       return String(text ?? "").replace(/[<>&"]/g, (m) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "\"": "&quot;" }[m]));
+    }
+
+    function clip(text, len = 42) {
+      const raw = String(text ?? "");
+      return raw.length > len ? `${raw.slice(0, len)}...` : raw;
     }
 
     function getGraphRoot(data) {
@@ -177,13 +254,25 @@
       svg.appendChild(defs);
     }
 
+    function renderSvgMessage(svg, message) {
+      clearSvg(svg);
+      const t = createSvgEl("text", { x: 20, y: 34, fill: "#6B7280", "font-size": 13 });
+      t.textContent = message;
+      svg.appendChild(t);
+    }
+
+    function getMacroNodeMap(data) {
+      const nodes = getGraphRoot(data)?.macro?.nodes || [];
+      return new Map(nodes.map((n) => [n.id, n]));
+    }
+
     function renderMacro(data) {
       clearSvg(macroSvg);
       const graph = getGraphRoot(data);
       const macro = graph?.macro;
       const nodes = Array.isArray(macro?.nodes) ? macro.nodes : [];
       const edges = Array.isArray(macro?.edges) && macro.edges.length ? macro.edges : buildEdgesFromDependencies(nodes);
-      if (!nodes.length) return;
+      if (!nodes.length) return renderSvgMessage(macroSvg, "暂无 macro 节点");
 
       addArrowMarker(macroSvg, "arrowMacro", "#9CA3AF");
       const pos = layoutByLevel(nodes, edges, "source", "target");
@@ -192,7 +281,7 @@
         const s = pos.get(e.source), t = pos.get(e.target);
         if (!s || !t) return;
         const line = createSvgEl("line", {
-          x1: s.x + 170, y1: s.y + 30, x2: t.x, y2: t.y + 30,
+          x1: s.x + 270, y1: s.y + 50, x2: t.x, y2: t.y + 50,
           stroke: "#9CA3AF", "stroke-width": 1.8, "marker-end": "url(#arrowMacro)"
         });
         macroSvg.appendChild(line);
@@ -203,31 +292,31 @@
         if (!p) return;
         const g = createSvgEl("g", { style: "cursor:pointer" });
         const statusColor = node.status === "done" ? "#10B981" : node.status === "failed" ? "#EF4444" : "#F59E0B";
+        const isSelected = node.id === selectedTaskId;
         const rect = createSvgEl("rect", {
-          x: p.x, y: p.y, width: 170, height: 60, rx: 10,
-          fill: node.color || "#EEF2FF", stroke: statusColor, "stroke-width": 2
+          x: p.x, y: p.y, width: 270, height: 100, rx: 10,
+          fill: node.color || "#EEF2FF", stroke: isSelected ? "#4F46E5" : statusColor, "stroke-width": isSelected ? 3 : 2
         });
-        const text = createSvgEl("text", { x: p.x + 8, y: p.y + 22, fill: "#111827", "font-size": 12 });
-        text.innerHTML = `<tspan x="${p.x + 8}" dy="0">${escapeText(node.label || node.task_type || "task")}</tspan>
+        const text = createSvgEl("text", { x: p.x + 8, y: p.y + 18, fill: "#111827", "font-size": 12 });
+        text.innerHTML = `<tspan x="${p.x + 8}" dy="0">${escapeText(node.label || node.task_type || "task")} · ${escapeText(node.status || "")}</tspan>
+<tspan x="${p.x + 8}" dy="16">目标：${escapeText(clip(node.goal, 30))}</tspan>
+<tspan x="${p.x + 8}" dy="16">结论：${escapeText(clip(node.conclusion, 30))}</tspan>
 <tspan x="${p.x + 8}" dy="16">${escapeText(node.id)}</tspan>`;
         g.appendChild(rect);
         g.appendChild(text);
-        g.addEventListener("click", () => {
-          taskSelect.value = node.id;
-          renderMicro(currentData, node.id);
-        });
+        g.addEventListener("click", () => setSelectedTask(node.id));
         macroSvg.appendChild(g);
       });
     }
 
     function renderMicro(data, taskId) {
       clearSvg(microSvg);
-      if (!taskId) return;
+      if (!taskId) return renderSvgMessage(microSvg, "请选择任务查看细粒度推理链");
       const graph = getGraphRoot(data);
       const micro = graph?.micro?.[taskId];
       const nodes = Array.isArray(micro?.nodes) ? micro.nodes : [];
       const edges = Array.isArray(micro?.edges) ? micro.edges : [];
-      if (!nodes.length) return;
+      if (!nodes.length) return renderSvgMessage(microSvg, "当前任务没有 micro 推理链数据");
 
       addArrowMarker(microSvg, "arrowMicro", "#6B7280");
       const pos = layoutByLevel(nodes, edges, "source_id", "target_id");
@@ -236,7 +325,7 @@
         const s = pos.get(e.source_id), t = pos.get(e.target_id);
         if (!s || !t) return;
         const line = createSvgEl("line", {
-          x1: s.x + 220, y1: s.y + 36, x2: t.x, y2: t.y + 36,
+          x1: s.x + 250, y1: s.y + 38, x2: t.x, y2: t.y + 38,
           stroke: e.color || "#6B7280", "stroke-width": 1.8,
           "stroke-dasharray": e.dash === "dashed" ? "6 4" : "",
           "marker-end": "url(#arrowMicro)"
@@ -249,7 +338,7 @@
         if (!p) return;
         const isEvidence = node.node_type === "evidence";
         const rect = createSvgEl("rect", {
-          x: p.x, y: p.y, width: 220, height: 72, rx: 10,
+          x: p.x, y: p.y, width: 250, height: 76, rx: 10,
           fill: isEvidence ? "#DBEAFE" : "#F3E8FF",
           stroke: isEvidence ? "#2563EB" : "#7C3AED",
           "stroke-width": 1.8
@@ -266,8 +355,92 @@
       });
     }
 
+    function renderTaskDetails(data, taskId) {
+      if (!taskId) {
+        taskDetail.innerHTML = '<div class="v">请选择一个任务查看完整信息。</div>';
+        return;
+      }
+      const node = getMacroNodeMap(data).get(taskId);
+      if (!node) {
+        taskDetail.innerHTML = '<div class="v">未找到任务信息。</div>';
+        return;
+      }
+
+      const evidenceList = Array.isArray(node.evidence_list) ? node.evidence_list : [];
+      const subConclusions = Array.isArray(node.sub_conclusions) ? node.sub_conclusions : [];
+      const conclusionChain = Array.isArray(node.conclusion_chain) ? node.conclusion_chain : [];
+      const dependencyList = Array.isArray(node.dependencies) ? node.dependencies : [];
+
+      const renderEvidenceRefs = (refs) => (Array.isArray(refs) ? refs : []).map((r) => `
+        <div class="block">
+          <div class="kv"><div class="k">ref</div><div class="v">${escapeText(r?.ref || "")}</div></div>
+          <div class="kv"><div class="k">excerpt</div><div class="v">${escapeText(r?.excerpt || "")}</div></div>
+        </div>
+      `).join("") || '<div class="v">无</div>';
+
+      taskDetail.innerHTML = `
+        <div class="kv"><div class="k">任务ID</div><div class="v">${escapeText(node.id)}</div></div>
+        <div class="kv"><div class="k">任务类型</div><div class="v">${escapeText(node.task_type || "")}</div></div>
+        <div class="kv"><div class="k">任务目标</div><div class="v">${escapeText(node.goal || "")}</div></div>
+        <div class="kv"><div class="k">结论</div><div class="v">${escapeText(node.conclusion || "")}</div></div>
+        <div class="kv"><div class="k">依赖任务</div><div class="v">${escapeText(dependencyList.join(", ") || "无")}</div></div>
+
+        <div class="block">
+          <h4>引用信息（evidence_list）</h4>
+          ${evidenceList.map((ev) => `
+            <div class="block">
+              <div class="kv"><div class="k">source_id</div><div class="v">${escapeText(ev.source_id || "")}</div></div>
+              <div class="kv"><div class="k">source_type</div><div class="v">${escapeText(ev.source_type || "")}</div></div>
+              <div class="kv"><div class="k">title</div><div class="v">${escapeText(ev.title || "")}</div></div>
+              <div class="kv"><div class="k">snippet</div><div class="v">${escapeText(ev.snippet || "")}</div></div>
+              <div class="kv"><div class="k">score</div><div class="v">relevance=${escapeText(ev.relevance_score)} / trust=${escapeText(ev.trust_score)}</div></div>
+            </div>
+          `).join("") || '<div class="v">无</div>'}
+        </div>
+
+        <div class="block">
+          <h4>子结论信息（sub_conclusions）</h4>
+          ${subConclusions.map((sc) => `
+            <div class="block">
+              <div class="kv"><div class="k">id/title</div><div class="v">${escapeText(sc.id || "")} / ${escapeText(sc.title || "")}</div></div>
+              <div class="kv"><div class="k">content</div><div class="v">${escapeText(sc.content || "")}</div></div>
+              <div class="kv"><div class="k">supported_by_evidence</div><div class="v">${escapeText((sc.supported_by_evidence || []).join(", ") || "无")}</div></div>
+              <div class="kv"><div class="k">reasoning_chain</div>
+                <div class="v">${(Array.isArray(sc.reasoning_chain) ? sc.reasoning_chain : []).map((rc) => `
+                  <div class="block">
+                    <div class="kv"><div class="k">reasoning</div><div class="v">${escapeText(rc.reasoning || "")}</div></div>
+                    <div class="kv"><div class="k">claim</div><div class="v">${escapeText(rc.claim || "")}</div></div>
+                    <div class="kv"><div class="k">evidence_refs</div>${renderEvidenceRefs(rc.evidence_refs)}</div>
+                  </div>
+                `).join("") || "无"}</div>
+              </div>
+            </div>
+          `).join("") || '<div class="v">无</div>'}
+        </div>
+
+        <div class="block">
+          <h4>结论链（conclusion_chain）</h4>
+          ${conclusionChain.map((cc) => `
+            <div class="block">
+              <div class="kv"><div class="k">reasoning</div><div class="v">${escapeText(cc.reasoning || "")}</div></div>
+              <div class="kv"><div class="k">claim</div><div class="v">${escapeText(cc.claim || "")}</div></div>
+              <div class="kv"><div class="k">evidence_refs</div>${renderEvidenceRefs(cc.evidence_refs)}</div>
+            </div>
+          `).join("") || '<div class="v">无</div>'}
+        </div>
+      `;
+    }
+
+    function setSelectedTask(taskId) {
+      selectedTaskId = taskId || "";
+      if (taskSelect.value !== selectedTaskId) taskSelect.value = selectedTaskId;
+      renderMacro(currentData);
+      renderMicro(currentData, selectedTaskId);
+      renderTaskDetails(currentData, selectedTaskId);
+    }
+
     function fillTaskSelect(data) {
-      taskSelect.innerHTML = '<option value="">请选择任务查看 micro 图</option>';
+      taskSelect.innerHTML = '<option value="">请选择任务查看详情</option>';
       const nodes = getGraphRoot(data)?.macro?.nodes || [];
       nodes.forEach((n) => {
         const op = document.createElement("option");
@@ -284,18 +457,23 @@
         if (!getGraphRoot(parsed)) throw new Error("缺少 dag_visualization.json.graph 结构");
         currentData = parsed;
         fillTaskSelect(parsed);
-        renderMacro(parsed);
-        renderMicro(parsed, taskSelect.value);
+        const macroNodes = getGraphRoot(parsed)?.macro?.nodes || [];
+        const nodeMap = new Set(macroNodes.map((n) => n.id));
+        const preferredTaskId = taskSelect.value || selectedTaskId;
+        selectedTaskId = nodeMap.has(preferredTaskId) ? preferredTaskId : (macroNodes[0]?.id || "");
+        setSelectedTask(selectedTaskId);
       } catch (err) {
         currentData = null;
-        clearSvg(macroSvg);
-        clearSvg(microSvg);
+        selectedTaskId = "";
+        renderSvgMessage(macroSvg, "解析失败，无法渲染总体视图");
+        renderSvgMessage(microSvg, "解析失败，无法渲染细粒度推理链");
+        taskDetail.innerHTML = '<div class="v">解析失败，无法展示任务信息。</div>';
         errorBox.textContent = `解析或渲染失败：${err.message}`;
       }
     }
 
     renderBtn.addEventListener("click", renderAll);
-    taskSelect.addEventListener("change", () => renderMicro(currentData, taskSelect.value));
+    taskSelect.addEventListener("change", () => setSelectedTask(taskSelect.value));
     loadSampleBtn.addEventListener("click", () => {
       jsonInput.value = JSON.stringify(sampleData, null, 2);
       renderAll();

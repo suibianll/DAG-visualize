@@ -1,0 +1,171 @@
+{
+  "dag_visualization": {
+    "json": {
+      "graph": {
+        "macro": {
+          "nodes": [
+            {
+              "id": "medical__task_N_1001",
+              "task_type": "knowledge_extract",
+              "status": "done",
+              "goal": "提取最新指南关于高血压一线用药与禁忌证要点",
+              "conclusion": "已完成核心证据抽取，形成结构化结论。",
+              "color": "#EDE9FE",
+              "label": "知识检索",
+              "evidence_count": 2,
+              "dependencies": [],
+              "evidence_list": [
+                {
+                  "source_id": "doc_guideline_a",
+                  "source_type": "vector",
+                  "title": "高血压指南A",
+                  "snippet": "ACEI/ARB 为推荐方案",
+                  "relevance_score": 0.92,
+                  "trust_score": 0.86
+                },
+                {
+                  "source_id": "doc_guideline_b",
+                  "source_type": "bm25",
+                  "title": "高血压指南B",
+                  "snippet": "肾功能受损时需调整",
+                  "relevance_score": 0.88,
+                  "trust_score": 0.83
+                }
+              ],
+              "sub_conclusions": [
+                {
+                  "id": "c1",
+                  "title": "一线药物推荐",
+                  "content": "ACEI/ARB 在多数患者中优先。",
+                  "supported_by_evidence": [
+                    "doc_guideline_a"
+                  ],
+                  "cross_refs": [],
+                  "reasoning_chain": [
+                    {
+                      "evidence_refs": [
+                        {
+                          "ref": "doc_guideline_a",
+                          "excerpt": "指南A：ACEI/ARB 推荐等级高"
+                        }
+                      ],
+                      "reasoning": "高质量证据且一致性高",
+                      "claim": "可作为初始治疗方案"
+                    }
+                  ]
+                }
+              ],
+              "conclusion_chain": [
+                {
+                  "evidence_refs": [
+                    {
+                      "ref": "doc_guideline_b",
+                      "excerpt": "指南B：肾功能下降需个体化调整"
+                    }
+                  ],
+                  "reasoning": "需结合肾功能评估",
+                  "claim": "可进入合规检查环节"
+                }
+              ]
+            },
+            {
+              "id": "medical__task_N_1002",
+              "task_type": "compliance_check",
+              "status": "pending",
+              "goal": "检查推荐方案与患者基础疾病及药物禁忌是否冲突",
+              "conclusion": "待执行",
+              "color": "#DCFCE7",
+              "label": "合规检查",
+              "evidence_count": 1,
+              "dependencies": [
+                "medical__task_N_1001"
+              ],
+              "evidence_list": [
+                {
+                  "source_id": "patient_profile",
+                  "source_type": "dependency",
+                  "title": "患者档案",
+                  "snippet": "慢性肾病3期",
+                  "relevance_score": 0.95,
+                  "trust_score": 0.9
+                }
+              ],
+              "sub_conclusions": [],
+              "conclusion_chain": []
+            },
+            {
+              "id": "medical__task_N_1003",
+              "task_type": "treatment_plan_gen",
+              "status": "failed",
+              "goal": "生成最终治疗建议并输出风险提示",
+              "conclusion": "证据不足，需补充肾功能复检数据",
+              "color": "#FEF3C7",
+              "label": "治疗计划",
+              "evidence_count": 0,
+              "dependencies": [
+                "medical__task_N_1002"
+              ],
+              "evidence_list": [],
+              "sub_conclusions": [],
+              "conclusion_chain": []
+            }
+          ],
+          "edges": [
+            {
+              "source": "medical__task_N_1001",
+              "target": "medical__task_N_1002"
+            },
+            {
+              "source": "medical__task_N_1002",
+              "target": "medical__task_N_1003"
+            }
+          ]
+        },
+        "micro": {
+          "medical__task_N_1001": {
+            "nodes": [
+              {
+                "id": "ev:doc_1",
+                "node_type": "evidence",
+                "content": "指南推荐 A",
+                "title": "指南A",
+                "source_type": "vector",
+                "task_id": "medical__task_N_1001"
+              },
+              {
+                "id": "medical__task_N_1001.c1.block_0",
+                "node_type": "reasoning_block",
+                "content": "根据指南A可得出结论1",
+                "chain_id": "c1",
+                "task_id": "medical__task_N_1001"
+              },
+              {
+                "id": "medical__task_N_1001.conclusion.block_0",
+                "node_type": "reasoning_block",
+                "content": "最终结论",
+                "chain_id": "conclusion",
+                "task_id": "medical__task_N_1001"
+              }
+            ],
+            "edges": [
+              {
+                "source_id": "ev:doc_1",
+                "target_id": "medical__task_N_1001.c1.block_0",
+                "edge_type": "evidence",
+                "dash": "dashed",
+                "color": "#2563EB"
+              },
+              {
+                "source_id": "medical__task_N_1001.c1.block_0",
+                "target_id": "medical__task_N_1001.conclusion.block_0",
+                "edge_type": "conclusion",
+                "dash": "solid",
+                "color": "#111827"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -421,7 +421,6 @@ app.layout = html.Div(
 
 @app.callback(
     Output("data-store", "data"),
-    Output("selection-store", "data"),
     Output("error-box", "children"),
     Input("upload-data", "contents"),
     Input("load-sample-btn", "n_clicks"),
@@ -432,23 +431,24 @@ def load_data(upload_contents, sample_clicks):
     try:
         if trigger == "upload-data" and upload_contents:
             data = parse_upload(upload_contents)
-            return data, None, ""
+            return data, ""
         if trigger == "load-sample-btn":
             data = read_json(SAMPLE_PATH)
-            return data, None, ""
+            return data, ""
     except Exception as exc:
-        return no_update, no_update, f"加载失败：{exc}"
-    return no_update, no_update, ""
+        return no_update, f"加载失败：{exc}"
+    return no_update, ""
 
 
 @app.callback(
     Output("selection-store", "data"),
     Input("macro-graph", "tapNodeData"),
     Input("reset-selection-btn", "n_clicks"),
+    Input("data-store", "data"),
     prevent_initial_call=True,
 )
-def update_selection(tap_data, reset_clicks):
-    if ctx.triggered_id == "reset-selection-btn":
+def update_selection(tap_data, reset_clicks, data):
+    if ctx.triggered_id in {"reset-selection-btn", "data-store"}:
         return None
     if tap_data and tap_data.get("id"):
         return tap_data.get("id")

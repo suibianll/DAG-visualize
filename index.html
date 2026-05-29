@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DAG Visualize</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #f5f6f8; color: #111827; }
+    .layout { display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
+    .panel { padding: 16px; background: #fff; border-right: 1px solid #e5e7eb; }
+    .panel h2 { margin: 0 0 8px; font-size: 18px; }
+    textarea { width: 100%; min-height: 420px; resize: vertical; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button, select { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; background: #fff; cursor: pointer; }
+    button.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+    .hint { margin-top: 10px; color: #4b5563; font-size: 12px; line-height: 1.5; }
+    .canvas { padding: 16px; overflow: auto; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .title { margin: 0 0 8px; font-size: 16px; }
+    svg { width: 100%; min-height: 280px; border: 1px dashed #d1d5db; border-radius: 8px; background: #fcfcfd; }
+    .error { margin-top: 8px; color: #dc2626; font-size: 13px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h2>DAG JSON 输入</h2>
+      <textarea id="jsonInput"></textarea>
+      <div class="row">
+        <button id="loadSampleBtn">加载示例</button>
+        <button class="primary" id="renderBtn">渲染</button>
+      </div>
+      <div class="row">
+        <select id="taskSelect" style="width: 100%">
+          <option value="">请选择任务查看 micro 图</option>
+        </select>
+      </div>
+      <div id="errorBox" class="error"></div>
+      <div class="hint">
+        支持结构：<br />
+        <code>dag_visualization.json.graph.macro</code> / <code>micro</code><br />
+        点击 macro 节点可直接切换 micro 视图。
+      </div>
+    </aside>
+    <main class="canvas">
+      <section class="card">
+        <h3 class="title">Macro DAG（任务依赖）</h3>
+        <svg id="macroSvg"></svg>
+      </section>
+      <section class="card">
+        <h3 class="title">Micro DAG（任务内推理）</h3>
+        <svg id="microSvg"></svg>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const jsonInput = $("jsonInput");
+    const renderBtn = $("renderBtn");
+    const taskSelect = $("taskSelect");
+    const loadSampleBtn = $("loadSampleBtn");
+    const errorBox = $("errorBox");
+    const macroSvg = $("macroSvg");
+    const microSvg = $("microSvg");
+
+    let currentData = null;
+
+    const sampleData = {
+      dag_visualization: {
+        json: {
+          graph: {
+            macro: {
+              nodes: [
+                { id: "medical__task_N_1001", task_type: "knowledge_extract", status: "done", goal: "提取指南要点", conclusion: "已提取", color: "#8B5CF6", label: "知识检索", evidence_count: 2, dependencies: [] },
+                { id: "medical__task_N_1002", task_type: "compliance_check", status: "pending", goal: "检查合规性", conclusion: "", color: "#10B981", label: "合规检查", evidence_count: 1, dependencies: ["medical__task_N_1001"] },
+                { id: "medical__task_N_1003", task_type: "treatment_plan_gen", status: "failed", goal: "生成治疗方案", conclusion: "证据不足", color: "#F59E0B", label: "治疗计划", evidence_count: 0, dependencies: ["medical__task_N_1002"] }
+              ],
+              edges: [
+                { source: "medical__task_N_1001", target: "medical__task_N_1002" },
+                { source: "medical__task_N_1002", target: "medical__task_N_1003" }
+              ]
+            },
+            micro: {
+              medical__task_N_1001: {
+                nodes: [
+                  { id: "ev:doc_1", node_type: "evidence", content: "指南推荐 A", title: "指南A", source_type: "vector", task_id: "medical__task_N_1001" },
+                  { id: "medical__task_N_1001.c1.block_0", node_type: "reasoning_block", content: "根据指南A可得出结论1", chain_id: "c1", task_id: "medical__task_N_1001" },
+                  { id: "medical__task_N_1001.conclusion.block_0", node_type: "reasoning_block", content: "最终结论", chain_id: "conclusion", task_id: "medical__task_N_1001" }
+                ],
+                edges: [
+                  { source_id: "ev:doc_1", target_id: "medical__task_N_1001.c1.block_0", edge_type: "evidence", dash: "dashed", color: "#2563EB" },
+                  { source_id: "medical__task_N_1001.c1.block_0", target_id: "medical__task_N_1001.conclusion.block_0", edge_type: "conclusion", dash: "solid", color: "#111827" }
+                ]
+              }
+            }
+          }
+        }
+      }
+    };
+
+    function clearSvg(svg) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+    }
+
+    function createSvgEl(tag, attrs = {}) {
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+      return el;
+    }
+
+    function escapeText(text) {
+      return String(text ?? "").replace(/[<>&"]/g, (m) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "\"": "&quot;" }[m]));
+    }
+
+    function getGraphRoot(data) {
+      return data?.dag_visualization?.json?.graph || null;
+    }
+
+    function buildEdgesFromDependencies(nodes) {
+      const edges = [];
+      nodes.forEach((n) => {
+        (n.dependencies || []).forEach((d) => edges.push({ source: d, target: n.id }));
+      });
+      return edges;
+    }
+
+    function layoutByLevel(nodes, edges, sourceKey = "source", targetKey = "target") {
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      const inDegree = new Map(nodes.map((n) => [n.id, 0]));
+      const adj = new Map(nodes.map((n) => [n.id, []]));
+      edges.forEach((e) => {
+        const s = e[sourceKey], t = e[targetKey];
+        if (!nodeIds.has(s) || !nodeIds.has(t)) return;
+        inDegree.set(t, (inDegree.get(t) || 0) + 1);
+        adj.get(s).push(t);
+      });
+
+      const queue = [];
+      inDegree.forEach((deg, id) => { if (deg === 0) queue.push(id); });
+      const level = new Map(nodes.map((n) => [n.id, 0]));
+
+      while (queue.length) {
+        const cur = queue.shift();
+        const curLevel = level.get(cur) || 0;
+        (adj.get(cur) || []).forEach((next) => {
+          level.set(next, Math.max(level.get(next) || 0, curLevel + 1));
+          inDegree.set(next, (inDegree.get(next) || 0) - 1);
+          if (inDegree.get(next) === 0) queue.push(next);
+        });
+      }
+
+      const groups = {};
+      nodes.forEach((n) => {
+        const lv = level.get(n.id) || 0;
+        if (!groups[lv]) groups[lv] = [];
+        groups[lv].push(n);
+      });
+
+      const positions = new Map();
+      const xGap = 260, yGap = 120, left = 60, top = 50;
+      Object.entries(groups).forEach(([lv, list]) => {
+        list.forEach((n, idx) => positions.set(n.id, { x: left + Number(lv) * xGap, y: top + idx * yGap }));
+      });
+      return positions;
+    }
+
+    function addArrowMarker(svg, id, color = "#6B7280") {
+      const defs = createSvgEl("defs");
+      const marker = createSvgEl("marker", {
+        id, markerWidth: 8, markerHeight: 6, refX: 7, refY: 3, orient: "auto"
+      });
+      const path = createSvgEl("path", { d: "M0,0 L8,3 L0,6 Z", fill: color });
+      marker.appendChild(path);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+    }
+
+    function renderMacro(data) {
+      clearSvg(macroSvg);
+      const graph = getGraphRoot(data);
+      const macro = graph?.macro;
+      const nodes = Array.isArray(macro?.nodes) ? macro.nodes : [];
+      const edges = Array.isArray(macro?.edges) && macro.edges.length ? macro.edges : buildEdgesFromDependencies(nodes);
+      if (!nodes.length) return;
+
+      addArrowMarker(macroSvg, "arrowMacro", "#9CA3AF");
+      const pos = layoutByLevel(nodes, edges, "source", "target");
+
+      edges.forEach((e) => {
+        const s = pos.get(e.source), t = pos.get(e.target);
+        if (!s || !t) return;
+        const line = createSvgEl("line", {
+          x1: s.x + 170, y1: s.y + 30, x2: t.x, y2: t.y + 30,
+          stroke: "#9CA3AF", "stroke-width": 1.8, "marker-end": "url(#arrowMacro)"
+        });
+        macroSvg.appendChild(line);
+      });
+
+      nodes.forEach((node) => {
+        const p = pos.get(node.id);
+        if (!p) return;
+        const g = createSvgEl("g", { style: "cursor:pointer" });
+        const statusColor = node.status === "done" ? "#10B981" : node.status === "failed" ? "#EF4444" : "#F59E0B";
+        const rect = createSvgEl("rect", {
+          x: p.x, y: p.y, width: 170, height: 60, rx: 10,
+          fill: node.color || "#EEF2FF", stroke: statusColor, "stroke-width": 2
+        });
+        const text = createSvgEl("text", { x: p.x + 8, y: p.y + 22, fill: "#111827", "font-size": 12 });
+        text.innerHTML = `<tspan x="${p.x + 8}" dy="0">${escapeText(node.label || node.task_type || "task")}</tspan>
+<tspan x="${p.x + 8}" dy="16">${escapeText(node.id)}</tspan>`;
+        g.appendChild(rect);
+        g.appendChild(text);
+        g.addEventListener("click", () => {
+          taskSelect.value = node.id;
+          renderMicro(currentData, node.id);
+        });
+        macroSvg.appendChild(g);
+      });
+    }
+
+    function renderMicro(data, taskId) {
+      clearSvg(microSvg);
+      if (!taskId) return;
+      const graph = getGraphRoot(data);
+      const micro = graph?.micro?.[taskId];
+      const nodes = Array.isArray(micro?.nodes) ? micro.nodes : [];
+      const edges = Array.isArray(micro?.edges) ? micro.edges : [];
+      if (!nodes.length) return;
+
+      addArrowMarker(microSvg, "arrowMicro", "#6B7280");
+      const pos = layoutByLevel(nodes, edges, "source_id", "target_id");
+
+      edges.forEach((e) => {
+        const s = pos.get(e.source_id), t = pos.get(e.target_id);
+        if (!s || !t) return;
+        const line = createSvgEl("line", {
+          x1: s.x + 220, y1: s.y + 36, x2: t.x, y2: t.y + 36,
+          stroke: e.color || "#6B7280", "stroke-width": 1.8,
+          "stroke-dasharray": e.dash === "dashed" ? "6 4" : "",
+          "marker-end": "url(#arrowMicro)"
+        });
+        microSvg.appendChild(line);
+      });
+
+      nodes.forEach((node) => {
+        const p = pos.get(node.id);
+        if (!p) return;
+        const isEvidence = node.node_type === "evidence";
+        const rect = createSvgEl("rect", {
+          x: p.x, y: p.y, width: 220, height: 72, rx: 10,
+          fill: isEvidence ? "#DBEAFE" : "#F3E8FF",
+          stroke: isEvidence ? "#2563EB" : "#7C3AED",
+          "stroke-width": 1.8
+        });
+        const text = createSvgEl("text", { x: p.x + 8, y: p.y + 20, fill: "#111827", "font-size": 12 });
+        const t1 = escapeText(node.node_type || "node");
+        const t2 = escapeText(node.id);
+        const t3 = escapeText((node.title || node.content || "").slice(0, 30));
+        text.innerHTML = `<tspan x="${p.x + 8}" dy="0">${t1}</tspan>
+<tspan x="${p.x + 8}" dy="16">${t2}</tspan>
+<tspan x="${p.x + 8}" dy="16">${t3}</tspan>`;
+        microSvg.appendChild(rect);
+        microSvg.appendChild(text);
+      });
+    }
+
+    function fillTaskSelect(data) {
+      taskSelect.innerHTML = '<option value="">请选择任务查看 micro 图</option>';
+      const nodes = getGraphRoot(data)?.macro?.nodes || [];
+      nodes.forEach((n) => {
+        const op = document.createElement("option");
+        op.value = n.id;
+        op.textContent = `${n.id} (${n.label || n.task_type || "task"})`;
+        taskSelect.appendChild(op);
+      });
+    }
+
+    function renderAll() {
+      errorBox.textContent = "";
+      try {
+        const parsed = JSON.parse(jsonInput.value);
+        if (!getGraphRoot(parsed)) throw new Error("缺少 dag_visualization.json.graph 结构");
+        currentData = parsed;
+        fillTaskSelect(parsed);
+        renderMacro(parsed);
+        renderMicro(parsed, taskSelect.value);
+      } catch (err) {
+        currentData = null;
+        clearSvg(macroSvg);
+        clearSvg(microSvg);
+        errorBox.textContent = `解析或渲染失败：${err.message}`;
+      }
+    }
+
+    renderBtn.addEventListener("click", renderAll);
+    taskSelect.addEventListener("change", () => renderMicro(currentData, taskSelect.value));
+    loadSampleBtn.addEventListener("click", () => {
+      jsonInput.value = JSON.stringify(sampleData, null, 2);
+      renderAll();
+    });
+
+    jsonInput.value = JSON.stringify(sampleData, null, 2);
+    renderAll();
+  </script>
+</body>
+</html>
